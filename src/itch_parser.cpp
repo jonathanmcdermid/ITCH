@@ -39,7 +39,8 @@ void ItchParser::Parse(const std::string& filename)
             return;
         }
 
-        switch (messageType) {
+        switch (messageType)
+        {
         case 'P': ProcessTradeMessage(message); break;
         default: break; // Ignore other message types for this exercise.
         }
