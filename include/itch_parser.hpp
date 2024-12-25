@@ -25,8 +25,6 @@ class ItchParser
 
     std::unordered_map<std::string, std::array<TradeData, 24>> stockData_;
 
-    [[nodiscard]] static size_t MessageLength(char c);
-
     [[nodiscard]] static uint32_t NetworkToHost(uint32_t val);
 
     [[nodiscard]] static uint64_t NetworkToHost(uint64_t val);

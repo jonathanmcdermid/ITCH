@@ -10,6 +10,33 @@
 
 void ItchParser::Parse(const std::string& filename)
 {
+    constexpr auto messageLengths = [] {
+        std::array<size_t, std::numeric_limits<uint8_t>::max()> lengths{};
+        lengths['S'] = 12;
+        lengths['R'] = 39;
+        lengths['H'] = 25;
+        lengths['Y'] = 20;
+        lengths['L'] = 26;
+        lengths['V'] = 35;
+        lengths['W'] = 12;
+        lengths['K'] = 28;
+        lengths['J'] = 35;
+        lengths['h'] = 1;
+        lengths['A'] = 36;
+        lengths['F'] = 40;
+        lengths['E'] = 31;
+        lengths['C'] = 36;
+        lengths['X'] = 23;
+        lengths['D'] = 19;
+        lengths['U'] = 35;
+        lengths['P'] = 44;
+        lengths['Q'] = 40;
+        lengths['B'] = 19;
+        lengths['I'] = 50;
+        lengths['O'] = 1;
+        return lengths;
+    }();
+
     gzFile gfile = gzopen(filename.c_str(), "rb");
     if (!gfile)
     {
@@ -22,7 +49,7 @@ void ItchParser::Parse(const std::string& filename)
         const size_t messageLength = (gzgetc(gfile) << 8) | gzgetc(gfile);
         const auto messageType = static_cast<char>(gzgetc(gfile));
 
-        if (MessageLength(messageType) != messageLength)
+        if (messageLengths[messageType] != messageLength)
         {
             if (gzeof(gfile)) { break; }
             std::cerr << "Failed to parse data. Char: " << messageType << " Length: " << messageLength;
@@ -47,36 +74,6 @@ void ItchParser::Parse(const std::string& filename)
     }
 
     gzclose(gfile);
-}
-
-size_t ItchParser::MessageLength(const char c)
-{
-    switch (c)
-    {
-    case 'S': return 12;
-    case 'R': return 39;
-    case 'H': return 25;
-    case 'Y': return 20;
-    case 'L': return 26;
-    case 'V': return 35;
-    case 'W': return 12;
-    case 'K': return 28;
-    case 'J': return 35;
-    case 'h': return 1;
-    case 'A': return 36;
-    case 'F': return 40;
-    case 'E': return 31;
-    case 'C': return 36;
-    case 'X': return 23;
-    case 'D': return 19;
-    case 'U': return 35;
-    case 'P': return 44;
-    case 'Q': return 40;
-    case 'B': return 19;
-    case 'I': return 50;
-    case 'O': return 1;
-    default: return 0;
-    }
 }
 
 uint32_t ItchParser::NetworkToHost(const uint32_t val)
