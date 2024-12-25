@@ -1,11 +1,12 @@
 #include <array>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <arpa/inet.h>
 #endif
 #include <zlib.h>
@@ -44,7 +45,7 @@ size_t MessageLength(char c)
     case 'B': return 19; // Broken trade
     case 'I': return 50; // NOII
     case 'O': return 1;  // Direct listing
-    default: return -1;  // Default case
+    default: return 0;   // Default case
     }
 }
 
@@ -94,7 +95,7 @@ void ProcessFile(const char* filename)
     while (true)
     {
         size_t messageLength = (gzgetc(gfile) << 8) | gzgetc(gfile);
-        char messageType = static_cast<char>(gzgetc(gfile));
+        auto messageType = static_cast<char>(gzgetc(gfile));
 
         // We use the expected length as a check to ensure the message is valid.
         if (MessageLength(messageType) != messageLength)
@@ -105,9 +106,9 @@ void ProcessFile(const char* filename)
         }
 
         std::array<char, 50> message{};
-        size_t bytesRead = gzread(gfile, message.data(), messageLength - 1);
+        size_t bytesRead = gzread(gfile, message.data(), static_cast<uint32_t>(messageLength - 1));
 
-        if (bytesRead != messageLength - 1)
+        if (bytesRead + 1 != messageLength)
         {
             if (gzeof(gfile)) { break; }
             std::cerr << "Failed to read data. Char: " << messageType << " Bytes read: " << bytesRead;
