@@ -1,5 +1,6 @@
 #include "itch_parser.hpp"
 
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <vector>
@@ -10,6 +11,9 @@
 
 void ItchParser::Parse(const std::string& filename)
 {
+    // Increasing the buffer size will reduce the number of reads from the file and improve performance, with diminishing returns.
+    constexpr size_t maxBufferSize = 1 << 19; // 512 KB
+
     constexpr auto messageLengths = [] {
         std::array<size_t, std::numeric_limits<uint8_t>::max()> lengths{};
         lengths['S'] = 12;
@@ -37,6 +41,15 @@ void ItchParser::Parse(const std::string& filename)
         return lengths;
     }();
 
+    constexpr auto maxMessageLength = [&] {
+        size_t max = 0;
+        for (const auto& length : messageLengths)
+        {
+            if (length > max) { max = length; }
+        }
+        return max;
+    }();
+
     gzFile gfile = gzopen(filename.c_str(), "rb");
     if (!gfile)
     {
@@ -44,33 +57,76 @@ void ItchParser::Parse(const std::string& filename)
         return;
     }
 
+    size_t bufferOffset = 0;
+    size_t bufferSize = 0;
+
+    std::array<char, maxBufferSize> buffer{};
+
     while (true)
     {
-        const size_t messageLength = (gzgetc(gfile) << 8) | gzgetc(gfile);
-        const auto messageType = static_cast<char>(gzgetc(gfile));
-
-        if (messageLengths[messageType] != messageLength)
+        // Read more data if the buffer is empty.
+        if (bufferOffset == bufferSize)
         {
-            if (gzeof(gfile)) { break; }
-            std::cerr << "Failed to parse data. Char: " << messageType << " Length: " << messageLength;
+            int res = gzread(gfile, buffer.data(), maxBufferSize);
+
+            if (res == 0) { break; }
+            if (res == -1)
+            {
+                std::cerr << "Failed to read from file.\n";
+                gzclose(gfile);
+                return;
+            }
+
+            bufferOffset = 0;
+            bufferSize = static_cast<size_t>(res);
+        }
+
+        // If the message might be truncated, move the remaining data to the beginning of the buffer and read more data.
+        if (bufferSize - bufferOffset < 2 + maxMessageLength) // 2 bytes for message length.
+        {
+            std::memmove(buffer.data(), &buffer[bufferOffset], bufferSize - bufferOffset);
+            const size_t leftoverSize = bufferSize - bufferOffset;
+            int res = gzread(gfile, &buffer[leftoverSize], static_cast<uint32_t>(maxBufferSize - leftoverSize));
+
+            if (res == 0) { break; }
+            if (res == -1)
+            {
+                std::cerr << "Failed to read from file.\n";
+                gzclose(gfile);
+                return;
+            }
+
+            bufferOffset = 0;
+            bufferSize = leftoverSize + static_cast<size_t>(res);
+        }
+
+        const size_t messageLength = (buffer[bufferOffset] << 8) | buffer[bufferOffset + 1];
+        const char messageType = buffer[bufferOffset + 2];
+        bufferOffset += 3;
+
+        // Check if the character represents a valid message type.
+        if (messageLengths[messageType] == 0)
+        {
+            std::cerr << "Unknown message type: " << messageType << '\n';
+            gzclose(gfile);
             return;
         }
 
-        std::array<char, 50> message{};
-        const size_t bytesRead = gzread(gfile, message.data(), static_cast<uint32_t>(messageLength - 1));
-
-        if (bytesRead + 1 != messageLength)
+        // Check if the message length is correct for the message type.
+        if (messageLengths[messageType] != messageLength)
         {
-            if (gzeof(gfile)) { break; }
-            std::cerr << "Failed to read data. Char: " << messageType << " Bytes read: " << bytesRead;
+            std::cerr << "Invalid message. Type: " << messageType << " Length: " << messageLength << '\n';
+            gzclose(gfile);
             return;
         }
 
         switch (messageType)
         {
-        case 'P': ProcessTradeMessage(message); break;
+        case 'P': ProcessTradeMessage(&buffer[bufferOffset]); break;
         default: break; // Ignore other message types for this exercise.
         }
+
+        bufferOffset += messageLength - 1;
     }
 
     gzclose(gfile);
@@ -94,24 +150,24 @@ uint64_t ItchParser::NetworkToHost(const uint64_t val)
 #endif
 }
 
-void ItchParser::ProcessTradeMessage(const std::array<char, 50>& message)
+void ItchParser::ProcessTradeMessage(const char* message)
 {
     constexpr uint64_t nsPerHour = 60ULL * 60ULL * 1E9;
 
-    const uint64_t timestamp = NetworkToHost(*reinterpret_cast<const uint64_t*>(message.data() + 4)) & ((1ULL << 48) - 1);
-    const uint32_t shares = NetworkToHost(*reinterpret_cast<const uint32_t*>(message.data() + 19));
-    const double price = NetworkToHost(*reinterpret_cast<const uint32_t*>(message.data() + 31)) / 10000.0;
-    const std::string ticker(message.data() + 23, 8);
+    const uint64_t timestamp = NetworkToHost(*reinterpret_cast<const uint64_t*>(message + 4)) & ((1ULL << 48) - 1);
+    const uint32_t shares = NetworkToHost(*reinterpret_cast<const uint32_t*>(message + 19));
+    const double price = NetworkToHost(*reinterpret_cast<const uint32_t*>(message + 31)) / 10000.0;
+    const std::string ticker(message + 23, 8);
 
     const uint32_t hour = (timestamp / nsPerHour) % 24;
-    TradeData& tradeData = stockData_[ticker][hour];
+    TradeData& tradeData = stockData[ticker][hour];
     tradeData.volume += shares;
     tradeData.priceVolume += shares * price;
 }
 
 void ItchParser::CalculateAndPrintVwap() const
 {
-    for (const auto& [ticker, hourlyData] : stockData_)
+    for (const auto& [ticker, hourlyData] : stockData)
     {
         for (uint32_t hour = 0; hour < 24; ++hour)
         {

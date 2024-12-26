@@ -1,3 +1,6 @@
+#ifndef ITCH_PARSER_HPP
+#define ITCH_PARSER_HPP
+
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -13,7 +16,7 @@ class ItchParser
 
     void CalculateAndPrintVwap() const;
 
-    void Reset() { stockData_.clear(); }
+    void Reset() { stockData.clear(); }
 
   private:
     struct TradeData
@@ -23,11 +26,13 @@ class ItchParser
         [[nodiscard]] double GetVwap() const { return volume == 0 ? std::numeric_limits<double>::quiet_NaN() : priceVolume / volume; }
     };
 
-    std::unordered_map<std::string, std::array<TradeData, 24>> stockData_;
+    std::unordered_map<std::string, std::array<TradeData, 24>> stockData;
 
     [[nodiscard]] static uint32_t NetworkToHost(uint32_t val);
 
     [[nodiscard]] static uint64_t NetworkToHost(uint64_t val);
 
-    void ProcessTradeMessage(const std::array<char, 50>& message);
+    void ProcessTradeMessage(const char* message);
 };
+
+#endif // ITCH_PARSER_HPP
