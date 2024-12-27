@@ -3,7 +3,6 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
-#include <vector>
 #ifndef _WIN32
 #include <arpa/inet.h>
 #endif
@@ -50,8 +49,8 @@ void ItchParser::Parse(const std::string& filename)
         return max;
     }();
 
-    gzFile gfile = gzopen(filename.c_str(), "rb");
-    if (!gfile)
+    gzFile file = gzopen(filename.c_str(), "rb");
+    if (!file)
     {
         std::cerr << "Failed to open file: " << filename << '\n';
         return;
@@ -67,13 +66,13 @@ void ItchParser::Parse(const std::string& filename)
         // Read more data if the buffer is empty.
         if (bufferOffset == bufferSize)
         {
-            int res = gzread(gfile, buffer.data(), maxBufferSize);
+            const int res = gzread(file, buffer.data(), maxBufferSize);
 
             if (res == 0) { break; }
             if (res == -1)
             {
                 std::cerr << "Failed to read from file.\n";
-                gzclose(gfile);
+                gzclose(file);
                 return;
             }
 
@@ -86,13 +85,13 @@ void ItchParser::Parse(const std::string& filename)
         {
             std::memmove(buffer.data(), &buffer[bufferOffset], bufferSize - bufferOffset);
             const size_t leftoverSize = bufferSize - bufferOffset;
-            int res = gzread(gfile, &buffer[leftoverSize], static_cast<uint32_t>(maxBufferSize - leftoverSize));
+            const int res = gzread(file, &buffer[leftoverSize], static_cast<uint32_t>(maxBufferSize - leftoverSize));
 
             if (res == 0) { break; }
             if (res == -1)
             {
                 std::cerr << "Failed to read from file.\n";
-                gzclose(gfile);
+                gzclose(file);
                 return;
             }
 
@@ -108,7 +107,7 @@ void ItchParser::Parse(const std::string& filename)
         if (messageLengths[messageType] == 0)
         {
             std::cerr << "Unknown message type: " << messageType << '\n';
-            gzclose(gfile);
+            gzclose(file);
             return;
         }
 
@@ -116,20 +115,17 @@ void ItchParser::Parse(const std::string& filename)
         if (messageLengths[messageType] != messageLength)
         {
             std::cerr << "Invalid message. Type: " << messageType << " Length: " << messageLength << '\n';
-            gzclose(gfile);
+            gzclose(file);
             return;
         }
 
-        switch (messageType)
-        {
-        case 'P': ProcessTradeMessage(&buffer[bufferOffset]); break;
-        default: break; // Ignore other message types for this exercise.
-        }
+        // Ignore other message types for this exercise.
+        if (messageType == 'P') { ProcessTradeMessage(&buffer[bufferOffset]); }
 
         bufferOffset += messageLength - 1;
     }
 
-    gzclose(gfile);
+    gzclose(file);
 }
 
 uint32_t ItchParser::NetworkToHost(const uint32_t val)
@@ -160,9 +156,9 @@ void ItchParser::ProcessTradeMessage(const char* message)
     const std::string ticker(message + 23, 8);
 
     const uint32_t hour = (timestamp / nsPerHour) % 24;
-    TradeData& tradeData = stockData[ticker][hour];
-    tradeData.volume += shares;
-    tradeData.priceVolume += shares * price;
+    auto& [volume, priceVolume] = stockData[ticker][hour];
+    volume += shares;
+    priceVolume += shares * price;
 }
 
 void ItchParser::CalculateAndPrintVwap() const
